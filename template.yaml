@@ -1,0 +1,180 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: mini-ofc - mini order fulfilment backend
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+      - arm64
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: byStatus
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sku
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sku
+          KeyType: HASH
+
+  ProductsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getProducts.handler
+      Environment:
+        Variables:
+          INVENTORY_TABLE: !Ref InventoryTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref InventoryTable
+      Events:
+        GetProducts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /products
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/getProducts.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  CreateOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: createOrder.handler
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+          STATE_MACHINE_ARN: !Ref OrderWorkflow
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref OrdersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OrdersTable
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt OrderWorkflow.Name
+      Events:
+        CreateOrder:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /orders
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/createOrder.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  GetOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getOrder.handler
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref OrdersTable
+      Events:
+        GetOrder:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /orders/{id}
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/getOrder.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  ReserveStockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: reserveStock.handler
+      Environment:
+        Variables:
+          INVENTORY_TABLE: !Ref InventoryTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InventoryTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/reserveStock.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  OrderWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: statemachine/order.asl.json
+      DefinitionSubstitutions:
+        ReserveStockFunctionArn: !GetAtt ReserveStockFunction.Arn
+        OrdersTableName: !Ref OrdersTable
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ReserveStockFunction
+        - DynamoDBWritePolicy:
+            TableName: !Ref OrdersTable
+
+Outputs:
+  HttpApiUrl:
+    Description: Base URL of the HTTP API
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  OrdersTableName:
+    Description: Orders table name
+    Value: !Ref OrdersTable
+  InventoryTableName:
+    Description: Inventory table name
+    Value: !Ref InventoryTable
+  OrderWorkflowArn:
+    Description: Order workflow state machine ARN
+    Value: !Ref OrderWorkflow

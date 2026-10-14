@@ -1,0 +1,46 @@
+{
+  "Comment": "Order workflow: reserve stock, then mark the order RESERVED, or FAILED when stock runs out",
+  "StartAt": "ReserveStock",
+  "States": {
+    "ReserveStock": {
+      "Type": "Task",
+      "Resource": "${ReserveStockFunctionArn}",
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": ["OutOfStock"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "MarkReserved"
+    },
+    "MarkReserved": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${OrdersTableName}",
+        "Key": { "orderId": { "S.$": "$.orderId" } },
+        "UpdateExpression": "SET #status = :status",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": { ":status": { "S": "RESERVED" } }
+      },
+      "End": true
+    },
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${OrdersTableName}",
+        "Key": { "orderId": { "S.$": "$.orderId" } },
+        "UpdateExpression": "SET #status = :status, failureReason = :reason",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": {
+          ":status": { "S": "FAILED" },
+          ":reason": { "S": "OutOfStock" }
+        }
+      },
+      "End": true
+    }
+  }
+}
