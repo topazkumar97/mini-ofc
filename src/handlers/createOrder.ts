@@ -66,6 +66,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         input: JSON.stringify({ orderId, items }),
       }),
     );
+
     return json(202, toPublicOrder(order));
   } catch (err) {
     if (!(err instanceof ConditionalCheckFailedException)) throw err;
@@ -74,6 +75,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     const existing = await ddb.send(
       new GetCommand({ TableName: TABLE, Key: { orderId }, ConsistentRead: true }),
     );
+    
     const stored = existing.Item as OrderRecord;
 
     if (stored.requestHash !== requestHash) {

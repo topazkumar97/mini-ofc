@@ -9,6 +9,10 @@ export type OrderRecord = {
   requestHash: string;
   // Set by the workflow when the order cannot be fulfilled.
   failureReason?: string;
+  // Set by the workflow once the order is sent to the store.
+  consignmentId?: string;
+  // Set by ReleaseStock so a retried compensation cannot release stock twice.
+  stockReleased?: boolean;
 };
 
 export const json = (statusCode: number, body: unknown) => ({
@@ -24,10 +28,12 @@ export const toPublicOrder = ({
   items,
   createdAt,
   failureReason,
+  consignmentId,
 }: OrderRecord) => ({
   orderId,
   status,
   items,
   createdAt,
   failureReason,
+  consignmentId,
 });

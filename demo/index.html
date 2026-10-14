@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mini-ofc demo panel</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --ok: #12805c; --ok-bg: #e5f5ee; --bad: #c4320a; --bad-bg: #fdece6; --warn: #b54708; --warn-bg: #fef4e6;
+    --run: #1d5fd1; --run-bg: #e8f0fd; --idle: #98a2b3; --idle-bg: #f2f4f7; --accent: #4f46e5;
+    --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1a1e27; --ink: #e6e9ef; --muted: #98a2b3; --line: #2c3240;
+      --ok: #4ade80; --ok-bg: #12301f; --bad: #fb7d5b; --bad-bg: #3a1a12; --warn: #fbbf24; --warn-bg: #3a2b0c;
+      --run: #7aa7ff; --run-bg: #16264a; --idle: #667085; --idle-bg: #222733; --accent: #8b85ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  .switches { display: flex; gap: 14px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+  .switches label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  select, input, button { font: inherit; color: inherit; }
+  select, input[type=text], input[type=number] { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 7px 16px; }
+  button:disabled { opacity: .5; cursor: default; }
+  main { display: grid; grid-template-columns: 260px minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px; align-items: start; }
+  @media (max-width: 1200px) { main { grid-template-columns: 240px minmax(0, 1fr); } #system { grid-column: 1 / -1; } }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; }
+  nav .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; }
+  nav .group:first-child { margin-top: 0; }
+  nav button { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 6px 8px; margin-bottom: 2px; }
+  nav button.active { background: var(--run-bg); border-color: var(--run); }
+  nav button .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .lead { color: var(--muted); margin: 0 0 10px; }
+  ul.tight { margin: 0; padding-left: 18px; }
+  ul.tight li { margin: 2px 0; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .log { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 12px; max-height: 260px; overflow: auto; }
+  .log div { padding: 1px 0; white-space: pre-wrap; }
+  .log .ok { color: var(--ok); } .log .bad { color: var(--bad); } .log .note { color: var(--muted); } .log .step { font-weight: 600; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 14px; background: var(--panel); }
+  .card-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .card-head code { font-size: 12px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--idle-bg); color: var(--muted); }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); } .badge.run { background: var(--run-bg); color: var(--run); }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  code, pre { font-family: var(--mono); }
+  pre { font-size: 11.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow: auto; max-height: 260px; margin: 6px 0; }
+  svg.flow { width: 100%; height: auto; margin: 8px 0 4px; }
+  svg.flow .node rect { fill: var(--idle-bg); stroke: var(--line); stroke-width: 1.5; }
+  svg.flow .node text { fill: var(--muted); font-size: 12px; }
+  svg.flow .node .sub { font-size: 9.5px; }
+  svg.flow .node.ok rect { fill: var(--ok-bg); stroke: var(--ok); } svg.flow .node.ok text { fill: var(--ok); }
+  svg.flow .node.bad rect { fill: var(--bad-bg); stroke: var(--bad); } svg.flow .node.bad text { fill: var(--bad); }
+  svg.flow .node.run rect { fill: var(--run-bg); stroke: var(--run); } svg.flow .node.run text { fill: var(--run); }
+  svg.flow .node.run rect { animation: pulse 1s ease-in-out infinite alternate; }
+  @keyframes pulse { to { stroke-width: 3.5; } }
+  svg.flow .edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  svg.flow .edge.catch { stroke-dasharray: 5 4; }
+  svg.flow .edge.taken { stroke: var(--ok); stroke-width: 2.5; }
+  svg.flow .edge.taken.catch { stroke: var(--bad); }
+  svg.flow .elabel { font-size: 10px; fill: var(--muted); }
+  svg.flow .retry circle { fill: var(--warn); } svg.flow .retry text { fill: #fff; font-size: 10px; font-weight: 700; }
+  .timeline { list-style: none; padding: 0; margin: 8px 0 0; }
+  .timeline > li { border-left: 3px solid var(--line); padding: 4px 0 8px 12px; margin-left: 4px; }
+  .timeline > li.ok { border-color: var(--ok); } .timeline > li.bad { border-color: var(--bad); } .timeline > li.run { border-color: var(--run); }
+  .timeline .what { color: var(--muted); font-size: 12px; }
+  .attempt { font-size: 12px; font-family: var(--mono); margin: 2px 0; }
+  .attempt.ok { color: var(--ok); } .attempt.bad { color: var(--bad); } .gap { font-size: 11.5px; color: var(--warn); margin: 1px 0 1px 14px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; }
+  .kv b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .store { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; text-align: center; font-size: 12px; }
+  .box { border: 1.5px solid var(--line); border-radius: 8px; padding: 6px; background: var(--idle-bg); }
+  .box b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .box.bad { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+  .box.ok { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+  .box.run { border-color: var(--run); background: var(--run-bg); color: var(--run); }
+  .arrow { color: var(--muted); }
+  .events { font-family: var(--mono); font-size: 11.5px; max-height: 220px; overflow: auto; }
+  .events div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .banner { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn); border-radius: 10px; padding: 14px 18px; margin: 16px 20px 0; }
+  .banner pre { background: var(--panel); }
+  .free { display: grid; gap: 8px; }
+  .free .line { display: flex; gap: 6px; }
+  .http { font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>mini-ofc demo panel</h1>
+  <span class="meta" id="meta">connecting…</span>
+  <div class="switches">
+    <label title="Chance that CreateConsignment throws ConsignmentServiceError">CreateConsignment FAIL_RATE
+      <select id="sw-fail"><option>0</option><option>0.3</option><option>0.5</option><option>1</option></select></label>
+    <label title="When true, StoreConsumer rejects every message">StoreConsumer CONSUMER_FAIL
+      <select id="sw-consumer"><option>false</option><option>true</option></select></label>
+    <button id="sw-apply">Apply switches</button>
+    <button id="reset-stock" title="SKU-1 = 1, SKU-2 = 10">Reset stock</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <nav class="panel" id="nav"></nav>
+
+  <section>
+    <div class="panel" id="scenario"></div>
+    <div id="cards"></div>
+  </section>
+
+  <aside class="panel" id="system">
+    <h2>Live system</h2>
+    <h3>Inventory (DynamoDB)</h3>
+    <div class="kv" id="inv"></div>
+    <h3>Store hand-off (SQS)</h3>
+    <div class="store">
+      <div class="box" id="q-main">FulfilmentQueue<b>–</b><span>waiting · in flight</span></div>
+      <div class="arrow">→</div>
+      <div class="box" id="q-consumer">StoreConsumer λ<b>–</b><span>CONSUMER_FAIL</span></div>
+      <div class="arrow">↓ after 3 receives</div><div></div><div></div>
+      <div class="box" id="q-dlq">FulfilmentDLQ<b>–</b><span>messages</span></div>
+      <div class="arrow">→</div>
+      <div class="box" id="q-alarm">DLQ alarm<b>–</b><span>CloudWatch</span></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="dlq-redrive">Redrive DLQ</button>
+      <button id="dlq-purge">Purge DLQ</button>
+      <span class="muted" style="font-size:11px">Alarm metrics lag 1–5 min.</span>
+    </div>
+    <h3>StoreConsumer log (last 15 min)</h3>
+    <div class="events" id="consumer-log"><span class="muted">No messages yet.</span></div>
+    <h3>Open in AWS console</h3>
+    <div id="links" class="row" style="font-size:12px"></div>
+  </aside>
+</main>
+
+<script>
+// ---------- tiny helpers ----------
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const secs = (a, b) => ((new Date(b) - new Date(a)) / 1000).toFixed(1) + 's';
+const json = (v) => esc(JSON.stringify(v, null, 2));
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || res.statusText);
+  return data;
+}
+
+let config = null;
+let running = false;
+
+// ---------- the workflow diagram (mirrors statemachine/order.asl.json) ----------
+const NODES = {
+  ReserveStock:          { x: 10,  y: 20,  w: 150, sub: 'Lambda · Catch OutOfStock' },
+  CreateConsignment:     { x: 200, y: 20,  w: 170, sub: 'Lambda · Retry ×3 · Catch' },
+  SendToFulfilmentQueue: { x: 410, y: 20,  w: 200, sub: 'SQS integration · Catch' },
+  MarkCompleted:         { x: 650, y: 20,  w: 150, sub: 'DynamoDB · SENT_TO_STORE' },
+  ReleaseStock:          { x: 290, y: 125, w: 150, sub: 'Lambda · compensation' },
+  MarkFailed:            { x: 290, y: 215, w: 150, sub: 'DynamoDB · FAILED' },
+};
+const EDGES = [
+  { from: 'ReserveStock', to: 'CreateConsignment', d: 'M160,42 L198,42' },
+  { from: 'CreateConsignment', to: 'SendToFulfilmentQueue', d: 'M370,42 L408,42' },
+  { from: 'SendToFulfilmentQueue', to: 'MarkCompleted', d: 'M610,42 L648,42' },
+  { from: 'CreateConsignment', to: 'ReleaseStock', d: 'M285,64 L335,123', catch: true, label: ['catch', 292, 100] },
+  { from: 'SendToFulfilmentQueue', to: 'ReleaseStock', d: 'M510,64 L400,123', catch: true, label: ['catch', 466, 100] },
+  { from: 'ReleaseStock', to: 'MarkFailed', d: 'M365,169 L365,213' },
+  { from: 'ReserveStock', to: 'MarkFailed', d: 'M85,64 L85,237 L288,237', catch: true, label: ['catch OutOfStock', 92, 228] },
+];
+
+function diagram(exec) {
+  const states = exec?.states ?? [];
+  const byName = Object.fromEntries(states.map((s) => [s.name, s]));
+  const taken = new Set();
+  for (let i = 1; i < states.length; i++) taken.add(states[i - 1].name + '>' + states[i].name);
+
+  const edges = EDGES.map((e) => {
+    const cls = ['edge', e.catch && 'catch', taken.has(e.from + '>' + e.to) && 'taken'].filter(Boolean).join(' ');
+    const label = e.label ? `<text class="elabel" x="${e.label[1]}" y="${e.label[2]}">${e.label[0]}</text>` : '';
+    return `<path class="${cls}" d="${e.d}" marker-end="url(#arrow)"/>${label}`;
+  }).join('');
+
+  const nodes = Object.entries(NODES).map(([name, n]) => {
+    const s = byName[name];
+    const cls = !s ? '' : s.outcome === 'running' ? 'run' : s.outcome === 'succeeded' ? 'ok' : 'bad';
+    const tries = s?.attempts.length ?? 0;
+    const retry = tries > 1
+      ? `<g class="retry"><circle cx="${n.x + n.w - 4}" cy="${n.y + 2}" r="11"/><text x="${n.x + n.w - 4}" y="${n.y + 6}" text-anchor="middle">×${tries}</text></g>`
+      : '';
+    return `<g class="node ${cls}"><title>${esc(HELP[name])}</title>
+      <rect x="${n.x}" y="${n.y}" width="${n.w}" height="44" rx="8"/>
+      <text x="${n.x + n.w / 2}" y="${n.y + 19}" text-anchor="middle" font-weight="600">${name}</text>
+      <text class="sub" x="${n.x + n.w / 2}" y="${n.y + 34}" text-anchor="middle">${n.sub}</text>${retry}</g>`;
+  }).join('');
+
+  return `<svg class="flow" viewBox="0 0 810 262" role="img" aria-label="Order workflow, path taken highlighted">
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color:var(--muted)"/></marker></defs>${edges}${nodes}</svg>`;
+}
+
+const HELP = {
+  ReserveStock: 'Takes stock for every SKU in one DynamoDB transaction (all or nothing). Throws OutOfStock if any SKU is short.',
+  CreateConsignment: 'Fake carrier API. Fails at FAIL_RATE. Retry: up to 3 more attempts with backoff 1s/2s/4s + full jitter, then Catch → ReleaseStock.',
+  SendToFulfilmentQueue: 'Step Functions calls SQS SendMessage itself (no Lambda). Any failure → Catch → ReleaseStock.',
+  MarkCompleted: 'Step Functions calls DynamoDB UpdateItem itself: status = SENT_TO_STORE, consignmentId.',
+  ReleaseStock: 'Compensation (saga). Gives the stock back and sets stockReleased=true in the same transaction, so a retry cannot release twice.',
+  MarkFailed: 'DynamoDB UpdateItem: status = FAILED, failureReason = $.error.Error.',
+};
+
+// ---------- one card per order, polled until the workflow finishes ----------
+function card(orderId, title) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  $('cards').appendChild(el);
+  const c = { el, orderId, title, http: null, exec: null, order: null };
+  render(c);
+  return c;
+}
+
+function statusBadge(status) {
+  if (!status) return '<span class="badge">…</span>';
+  const cls = { SENT_TO_STORE: 'ok', FAILED: 'bad', PLACED: 'run', SUCCEEDED: 'ok', RUNNING: 'run' }[status] || 'bad';
+  return `<span class="badge ${cls}">${esc(status ?? '…')}</span>`;
+}
+
+function render(c) {
+  const o = c.order?.api?.body;
+  const raw = c.order?.raw;
+  const ex = c.exec;
+  const link = ex?.arn && config?.links ? `<a href="${config.links.executionPrefix + encodeURIComponent(ex.arn)}" target="_blank" rel="noreferrer">Execution in console ↗</a>` : '';
+
+  const timeline = (ex?.states ?? []).map((s, i, all) => {
+    const cls = s.outcome === 'running' ? 'run' : s.outcome === 'succeeded' ? 'ok' : 'bad';
+    const attempts = s.attempts.map((a, j) => {
+      const gap = j > 0 && s.attempts[j - 1].endedAt
+        ? `<div class="gap">↻ Retry waited ${secs(s.attempts[j - 1].endedAt, a.scheduledAt)} (backoff cap ${2 ** (j - 1)}s, full jitter)</div>` : '';
+      const line = a.ok === undefined ? `<div class="attempt">attempt ${j + 1}: running…</div>`
+        : a.ok ? `<div class="attempt ok">attempt ${j + 1}: ✓ succeeded</div>`
+        : `<div class="attempt bad">attempt ${j + 1}: ✗ ${esc(a.error)}${a.cause ? ' — ' + esc(a.cause) : ''}</div>`;
+      return gap + line;
+    }).join('');
+    const next = all[i + 1];
+    const caught = s.outcome === 'failed' && next ? `<div class="attempt bad">→ Catch sent the execution to <b>${esc(next.name)}</b>, error stored at $.error</div>` : '';
+    return `<li class="${cls}"><b>${i + 1}. ${esc(s.name)}</b> <span class="muted">${s.exitedAt ? secs(s.enteredAt, s.exitedAt) : ''}</span>
+      <div class="what">${esc(HELP[s.name] ?? '')}</div>${attempts}${caught}
+      <details><summary>JSON in / out of this state</summary>
+        <div class="muted" style="font-size:11px">input</div><pre>${json(s.input)}</pre>
+        ${s.output !== undefined ? `<div class="muted" style="font-size:11px">output (after ResultPath)</div><pre>${json(s.output)}</pre>` : ''}
+      </details></li>`;
+  }).join('');
+
+  c.el.innerHTML = `
+    <div class="card-head"><b>${esc(c.title)}</b> <code>${esc(c.orderId)}</code>
+      order ${statusBadge(o?.status)} workflow ${statusBadge(ex?.exists === false ? 'NOT STARTED' : ex?.status)} ${link}</div>
+    ${c.http ? `<div class="http" style="margin-top:6px">POST /orders → <b>${c.http.status}</b> ${esc(JSON.stringify(c.http.body))}</div>` : ''}
+    ${diagram(ex)}
+    ${ex?.error ? `<div class="attempt bad">Execution failed: ${esc(ex.error)} — ${esc(ex.cause)}</div>` : ''}
+    <ul class="timeline">${timeline}</ul>
+    ${raw ? `<details><summary>Order item in DynamoDB (includes internal fields like stockReleased)</summary><pre>${json(raw)}</pre></details>` : ''}`;
+}
+
+async function track(c, timeoutMs = 90_000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    [c.exec, c.order] = await Promise.all([api('GET', '/api/executions/' + c.orderId), api('GET', '/api/orders/' + c.orderId)]);
+    render(c);
+    if (c.exec.exists && c.exec.status !== 'RUNNING') break;
+    await sleep(1200);
+  }
+  return c;
+}
+
+// ---------- scenario runner helpers ----------
+function log(text, kind = '') {
+  const d = document.createElement('div');
+  d.className = kind;
+  d.textContent = text;
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+async function switches(failRate, consumerFail) {
+  log(`Setting switches: FAIL_RATE=${failRate}, CONSUMER_FAIL=${consumerFail} (updates the Lambda env vars, ~5s)…`, 'note');
+  const s = await api('POST', '/api/switches', { failRate, consumerFail });
+  showSwitches(s);
+}
+
+async function resetStock() {
+  await api('POST', '/api/inventory/reset');
+  log('Stock reset: SKU-1 = 1, SKU-2 = 10', 'note');
+  await refreshSystem();
+}
+
+async function stock() {
+  const inv = await api('GET', '/api/inventory');
+  return Object.fromEntries(inv.map((i) => [i.sku, i.available]));
+}
+const fmtStock = (s) => Object.entries(s).map(([k, v]) => `${k}=${v}`).join(', ');
+
+async function placeOrder(items, opts = {}) {
+  const res = await api('POST', '/api/orders', { key: opts.key, payload: { items } });
+  log(`POST /orders ${JSON.stringify({ items })} (key ${res.key?.slice(0, 8)}…) → ${res.status}`, res.status < 300 ? 'ok' : 'bad');
+  return res;
+}
+
+async function orderAndTrack(items, title, opts) {
+  const res = await placeOrder(items, opts);
+  const c = card(res.body.orderId, title);
+  c.http = res;
+  await track(c);
+  log(`${c.orderId}: order ${c.order.api.body.status}${c.order.api.body.failureReason ? ' (' + c.order.api.body.failureReason + ')' : ''}, path: ${c.exec.path.join(' → ')}`, 'ok');
+  return c;
+}
+
+async function waitFor(desc, fn, timeoutMs, everyMs = 3000) {
+  log(`Waiting for: ${desc}…`, 'note');
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const v = await fn();
+    if (v) return v;
+    await sleep(everyMs);
+  }
+  log(`Gave up waiting for: ${desc} (it may still happen; watch the Live system panel)`, 'bad');
+  return null;
+}
+
+// ---------- the scenarios ----------
+const SCENARIOS = [
+  { group: 'Workflow (Step Functions)', id: 'happy', title: 'Happy path',
+    summary: 'Everything works: stock is reserved, the consignment is created first time, the message goes to SQS and the order ends SENT_TO_STORE.',
+    learn: ['The full green path through all four states', 'ResultPath: watch $.consignment appear in the JSON after CreateConsignment', 'The store consumer receiving the message a moment later'],
+    watch: ['Step Functions → the execution → Graph view and Events tab', 'DynamoDB Orders table: status SENT_TO_STORE + consignmentId', 'CloudWatch logs of StoreConsumer: "Fulfilment message received"'],
+    async run() {
+      await switches('0', 'false'); await resetStock();
+      const before = await stock();
+      const c = await orderAndTrack([{ sku: 'SKU-2', qty: 1 }], 'Happy path');
+      log(`Stock ${fmtStock(before)} → ${fmtStock(await stock())}  (SKU-2 reserved, stays taken)`, 'ok');
+      await waitFor('StoreConsumer to log this order', async () =>
+        (await api('GET', '/api/consumer-logs?since=' + (Date.now() - 120_000))).find((e) => e.orderId === c.orderId), 30_000);
+      log('Store received the message. Done.', 'ok');
+    } },
+
+  { group: 'Workflow (Step Functions)', id: 'retry', title: 'Retry, then success',
+    summary: 'The carrier fails 50% of the time. Step Functions retries CreateConsignment with exponential backoff and jitter, and most orders still succeed: the client never sees the failures.',
+    learn: ['Retry = run the same state again', 'Waits grow (cap 1s, 2s, 4s) but are random (full jitter)', 'An order can succeed even though CreateConsignment failed 1–3 times', 'Randomness: if all 4 attempts fail, you get the compensation path instead'],
+    watch: ['Execution → Events tab: LambdaFunctionFailed followed by a new LambdaFunctionScheduled', 'Graph view: CreateConsignment is green even though it failed before'],
+    async run() {
+      await switches('0.5', 'false'); await resetStock();
+      log('Placing 4 orders at once; with FAIL_RATE 0.5 each has ~44% chance to show retry-then-success.', 'note');
+      const cards = await Promise.all([1, 2, 3, 4].map((n) => orderAndTrack([{ sku: 'SKU-2', qty: 1 }], `Order ${n} of 4`)));
+      const tries = cards.map((c) => c.exec.states.find((s) => s.name === 'CreateConsignment')?.attempts.length ?? 0);
+      log(`CreateConsignment attempts per order: ${tries.join(', ')}  (1 = first try worked, 4 + FAILED = retries ran out)`, 'ok');
+      if (!tries.some((t, i) => t > 1 && cards[i].order.api.body.status === 'SENT_TO_STORE')) log('No retry-then-success this time (it is random). Run it again.', 'bad');
+      await switches('0.3', 'false');
+    } },
+
+  { group: 'Workflow (Step Functions)', id: 'oos', title: 'Out of stock',
+    summary: 'Order 2 kettles when only 1 exists. ReserveStock throws OutOfStock and Catch goes straight to MarkFailed. There is no ReleaseStock, because nothing was reserved.',
+    learn: ['Business errors are caught, not retried (retrying a "no" is pointless)', 'failureReason comes from $.error.Error', 'Compensation only runs for steps that changed something'],
+    watch: ['Graph view: ReserveStock orange/red, jump to MarkFailed', 'Orders table: status FAILED, failureReason OutOfStock'],
+    async run() {
+      await switches('0.3', 'false'); await resetStock();
+      const before = await stock();
+      await orderAndTrack([{ sku: 'SKU-1', qty: 2 }], 'Out of stock');
+      log(`Stock ${fmtStock(before)} → ${fmtStock(await stock())}  (unchanged)`, 'ok');
+    } },
+
+  { group: 'Workflow (Step Functions)', id: 'atomic', title: 'All-or-nothing reservation',
+    summary: '1 kettle (available) + 50 toasters (not available) in one order. The DynamoDB transaction cancels both updates, so the kettle is not taken either.',
+    learn: ['TransactWriteItems: every SKU or none', 'No partial reservations, nothing to clean up'],
+    watch: ['Inventory table: SKU-1 still 1 after the order failed'],
+    async run() {
+      await switches('0.3', 'false'); await resetStock();
+      const before = await stock();
+      await orderAndTrack([{ sku: 'SKU-1', qty: 1 }, { sku: 'SKU-2', qty: 50 }], 'Mixed order');
+      log(`Stock ${fmtStock(before)} → ${fmtStock(await stock())}  (SKU-1 not taken, although it was available)`, 'ok');
+    } },
+
+  { group: 'Workflow (Step Functions)', id: 'saga', title: 'Compensation (saga)',
+    summary: 'The carrier is completely down (FAIL_RATE 1). After 4 attempts Catch sends the order to ReleaseStock, which gives the reserved stock back, then MarkFailed.',
+    learn: ['Retry first, then Catch when retries run out', 'Saga: each step that changes something has an undo step', 'Stock goes 10 → 8 (reserved) → 10 (released)', 'stockReleased=true on the order item'],
+    watch: ['Events tab: 4 CreateConsignment attempts with growing random gaps', 'Graph: CreateConsignment → ReleaseStock → MarkFailed', 'Orders table: stockReleased = true, failureReason ConsignmentServiceError'],
+    async run() {
+      await switches('1', 'false'); await resetStock();
+      const before = await stock();
+      const res = await placeOrder([{ sku: 'SKU-2', qty: 2 }]);
+      const c = card(res.body.orderId, 'Carrier down');
+      c.http = res;
+      await waitFor('ReserveStock to finish', async () => {
+        const ex = await api('GET', '/api/executions/' + c.orderId);
+        return ex.states?.some((s) => s.name === 'CreateConsignment');
+      }, 15_000, 500);
+      log(`While CreateConsignment is retrying: stock ${fmtStock(await stock())}  (2 toasters reserved)`, 'note');
+      await track(c);
+      log(`After compensation: stock ${fmtStock(before)} → ${fmtStock(await stock())}  (given back)`, 'ok');
+      log(`Order: ${c.order.api.body.status} / ${c.order.api.body.failureReason}, stockReleased=${c.order.raw?.stockReleased}`, 'ok');
+      await switches('0.3', 'false');
+    } },
+
+  { group: 'Workflow (Step Functions)', id: 'release-twice', title: 'Compensation runs twice',
+    summary: 'What if ReleaseStock runs again for the same order (e.g. a retry after a lost response)? Without protection, stock would be added back twice. We call the Lambda directly, twice more.',
+    learn: ['Idempotency marker in the same transaction', 'Second release: transaction cancelled because stockReleased exists, handler treats that as success'],
+    watch: ['Lambda → ReleaseStock → Monitor → logs: three invocations, stock only added once'],
+    async run() {
+      await switches('1', 'false'); await resetStock();
+      const c = await orderAndTrack([{ sku: 'SKU-2', qty: 3 }], 'Order to compensate');
+      await switches('0.3', 'false');
+      for (const n of [1, 2]) {
+        const before = await stock();
+        const r = await api('POST', '/api/release-again/' + c.orderId);
+        log(`Extra ReleaseStock call #${n}: ${r.functionError ? 'error ' + JSON.stringify(r.result) : 'returned OK'}; stock ${fmtStock(before)} → ${fmtStock(await stock())}`, r.functionError ? 'bad' : 'ok');
+      }
+      log('Stock did not change: the marker blocked the double release.', 'ok');
+    } },
+
+  { group: 'Store hand-off (SQS)', id: 'dlq', title: 'Store is down → DLQ → alarm',
+    summary: 'The workflow succeeds (message is in the queue), but the store rejects it. SQS redelivers it every 30s; after 3 receives it moves to the dead-letter queue and the alarm fires.',
+    learn: ['The order says SENT_TO_STORE even though the store failed: the workflow ends at the queue', 'Visibility timeout (30s) = the gap between redeliveries', 'maxReceiveCount 3 → DLQ', 'Takes ~1.5 min for the DLQ, a few more minutes for the alarm'],
+    watch: ['SQS → FulfilmentQueue → Monitoring, then FulfilmentDLQ → Send and receive messages → Poll', 'StoreConsumer logs: same messageId with receiveCount 1, 2, 3', 'CloudWatch → Alarms: FulfilmentDLQAlarm goes to In alarm'],
+    async run() {
+      await switches('0', 'true'); await resetStock();
+      const c = await orderAndTrack([{ sku: 'SKU-2', qty: 1 }], 'Order for a broken store');
+      const since = Date.now() - 60_000;
+      const seen = new Set();
+      await waitFor('3 failed receives in StoreConsumer logs (~60–90s)', async () => {
+        const evs = (await api('GET', '/api/consumer-logs?since=' + since)).filter((e) => e.orderId === c.orderId);
+        for (const e of evs) if (!seen.has(e.receiveCount)) { seen.add(e.receiveCount); log(`StoreConsumer received it (receiveCount ${e.receiveCount}) and rejected it`, 'bad'); }
+        return seen.size >= 3;
+      }, 150_000, 4000);
+      await waitFor('message to land in the DLQ', async () => (await api('GET', '/api/queues')).dlq.visible > 0, 90_000, 4000);
+      log('Message is in the DLQ. The alarm turns ALARM within a few minutes (see Live system).', 'ok');
+      log('Next: wait for the alarm box to turn red, then run "Fix the store and redrive".', 'step');
+    } },
+
+  { group: 'Store hand-off (SQS)', id: 'redrive', title: 'Fix the store and redrive',
+    summary: 'After the store is fixed, move the DLQ messages back to the main queue. The consumer processes them, the DLQ empties and the alarm returns to OK.',
+    learn: ['DLQ = parking lot, not a bin: nothing is lost', 'StartMessageMoveTask returns messages to their source queue', 'This is why the consumer must be idempotent: a message can be processed more than once'],
+    watch: ['SQS → FulfilmentDLQ → "Start DLQ redrive" (the same thing, from the console)', 'StoreConsumer logs: the message received again, without "Message failed"'],
+    async run() {
+      await switches('0.3', 'false');
+      const q = await api('GET', '/api/queues');
+      if (!q.dlq.visible) { log('The DLQ is empty. Run "Store is down → DLQ → alarm" first.', 'bad'); return; }
+      const since = Date.now();
+      const r = await api('POST', '/api/dlq/redrive');
+      log(`Redrive started (task ${r.taskHandle?.slice(0, 12)}…), moving ${q.dlq.visible} message(s)`, 'ok');
+      const ok = await waitFor('the consumer to process the redriven message', async () => {
+        const evs = await api('GET', '/api/consumer-logs?since=' + since);
+        return evs.some((e) => e.msg === 'Fulfilment message received') && !evs.some((e) => e.msg === 'Message failed');
+      }, 90_000, 4000);
+      if (ok) log('Processed successfully. The DLQ alarm goes back to OK within a few minutes.', 'ok');
+    } },
+
+  { group: 'API front door', id: 'idem', title: 'Same request sent twice',
+    summary: 'The client resends the same request with the same Idempotency-Key (e.g. after a network timeout). It gets the same order back with 200, and no second workflow runs.',
+    learn: ['orderId = hash(key), conditional write attribute_not_exists', '202 first time, 200 on replay', 'Execution named after the order: Step Functions refuses a second one'],
+    watch: ['Step Functions executions list: only one execution with this order id'],
+    async run() {
+      await switches('0.3', 'false'); await resetStock();
+      const key = 'demo-' + crypto.randomUUID();
+      const items = [{ sku: 'SKU-2', qty: 1 }];
+      const c = await orderAndTrack(items, 'First request', { key });
+      const again = await placeOrder(items, { key });
+      log(`Replay returned orderId ${again.body.orderId} (${again.body.orderId === c.orderId ? 'same' : 'DIFFERENT'})`, again.body.orderId === c.orderId ? 'ok' : 'bad');
+      log(`Stock: ${fmtStock(await stock())}  (taken once, not twice)`, 'ok');
+      const dup = await api('POST', `/api/executions/${c.orderId}/duplicate`);
+      log(dup.started ? 'A second execution started (unexpected!)' : `Starting a 2nd workflow directly → ${dup.error}`, dup.started ? 'bad' : 'ok');
+    } },
+
+  { group: 'API front door', id: 'conflict', title: 'Key reused for a different order',
+    summary: 'Same Idempotency-Key, different body. That is a client bug, so the API answers 409 instead of silently returning the wrong order.',
+    learn: ['requestHash = fingerprint of the normalised items', 'Key match + hash mismatch → 409'],
+    watch: ['Orders table: the stored item has idempotencyKey and requestHash'],
+    async run() {
+      await switches('0.3', 'false'); await resetStock();
+      const key = 'demo-' + crypto.randomUUID();
+      await orderAndTrack([{ sku: 'SKU-2', qty: 1 }], 'Original order', { key });
+      await placeOrder([{ sku: 'SKU-2', qty: 5 }], { key });
+    } },
+
+  { group: 'API front door', id: 'invalid', title: 'Invalid requests (400)',
+    summary: 'Bad requests are rejected at the door: no order is written and no workflow starts.',
+    learn: ['Validate before writing anything', 'Idempotency-Key is mandatory'],
+    watch: ['No new executions appear in Step Functions'],
+    async run() {
+      const cases = [
+        ['No Idempotency-Key header', { key: null, payload: { items: [{ sku: 'SKU-2', qty: 1 }] } }],
+        ['Empty items', { payload: { items: [] } }],
+        ['qty = 0', { payload: { items: [{ sku: 'SKU-2', qty: 0 }] } }],
+        ['qty not an integer', { payload: { items: [{ sku: 'SKU-2', qty: 1.5 }] } }],
+        ['Body is not JSON', { rawBody: 'hello' }],
+      ];
+      for (const [name, body] of cases) {
+        const r = await api('POST', '/api/orders', body);
+        log(`${name.padEnd(28)} → ${r.status} ${JSON.stringify(r.body)}`, r.status === 400 ? 'ok' : 'bad');
+      }
+    } },
+];
+
+// ---------- page wiring ----------
+let current = SCENARIOS[0];
+
+function renderNav() {
+  let html = '', group = '';
+  SCENARIOS.forEach((s, i) => {
+    if (s.group !== group) { group = s.group; html += `<div class="group">${esc(group)}</div>`; }
+    html += `<button data-id="${s.id}" class="${s === current ? 'active' : ''}"><span class="n">${i + 1}</span>${esc(s.title)}</button>`;
+  });
+  html += `<div class="group">Free play</div><button data-id="free" class="${current === 'free' ? 'active' : ''}">Custom order</button>`;
+  $('nav').innerHTML = html;
+}
+
+function renderScenario() {
+  if (current === 'free') {
+    $('scenario').innerHTML = `<h2>Custom order</h2>
+      <p class="lead">Set the switches in the header, then place any order. Reuse a key to test idempotency.</p>
+      <div class="free">
+        <div class="line"><input id="f-sku1" type="text" value="SKU-2" size="8"><input id="f-qty1" type="number" value="1" style="width:70px"></div>
+        <div class="line"><input id="f-sku2" type="text" placeholder="optional SKU" size="8"><input id="f-qty2" type="number" placeholder="qty" style="width:70px"></div>
+        <div class="line"><input id="f-key" type="text" placeholder="Idempotency-Key (blank = random)" style="flex:1"></div>
+        <div class="row"><button class="primary" id="run">Place order</button></div>
+      </div><div class="log" id="log"></div>`;
+  } else {
+    const s = current;
+    $('scenario').innerHTML = `<h2>${esc(s.title)}</h2><p class="lead">${esc(s.summary)}</p>
+      <h3>What you'll learn</h3><ul class="tight">${s.learn.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+      <h3>Where to look in the AWS console</h3><ul class="tight">${s.watch.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+      <div class="row" style="margin-top:12px"><button class="primary" id="run">Run scenario</button>
+      <span class="muted" style="font-size:12px">Runs against your real stack. Switches and stock are set for you.</span></div>
+      <div class="log" id="log"></div>`;
+  }
+  $('run').disabled = running || !config?.ready;
+  $('run').onclick = runCurrent;
+}
+
+async function runCurrent() {
+  running = true;
+  document.querySelectorAll('#run, #sw-apply, #reset-stock').forEach((b) => (b.disabled = true));
+  $('cards').innerHTML = '';
+  $('log').innerHTML = '';
+  try {
+    if (current === 'free') {
+      const items = [[$('f-sku1').value, $('f-qty1').value], [$('f-sku2').value, $('f-qty2').value]]
+        .filter(([s]) => s.trim()).map(([sku, qty]) => ({ sku: sku.trim(), qty: Number(qty) }));
+      const key = $('f-key').value.trim() || undefined;
+      const res = await placeOrder(items, { key });
+      if (res.body?.orderId) { const c = card(res.body.orderId, 'Custom order'); c.http = res; await track(c); }
+    } else {
+      log(`▶ ${current.title}`, 'step');
+      await current.run();
+    }
+  } catch (err) {
+    log('Error: ' + err.message, 'bad');
+  } finally {
+    running = false;
+    document.querySelectorAll('#run, #sw-apply, #reset-stock').forEach((b) => (b.disabled = !config?.ready));
+    refreshSystem();
+  }
+}
+
+$('nav').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (!b || running) return;
+  current = b.dataset.id === 'free' ? 'free' : SCENARIOS.find((s) => s.id === b.dataset.id);
+  $('cards').innerHTML = '';
+  renderNav(); renderScenario();
+};
+
+function showSwitches(s) {
+  $('sw-fail').value = s.failRate;
+  if (![...$('sw-fail').options].some((o) => o.value === s.failRate)) $('sw-fail').add(new Option(s.failRate));
+  $('sw-fail').value = s.failRate;
+  $('sw-consumer').value = s.consumerFail;
+  const c = $('q-consumer');
+  c.className = 'box ' + (s.consumerFail === 'true' ? 'bad' : 'ok');
+  c.querySelector('b').textContent = s.consumerFail === 'true' ? 'failing' : 'healthy';
+}
+
+$('sw-apply').onclick = async () => {
+  $('sw-apply').disabled = true;
+  try { showSwitches(await api('POST', '/api/switches', { failRate: $('sw-fail').value, consumerFail: $('sw-consumer').value })); }
+  catch (err) { alert(err.message); }
+  finally { $('sw-apply').disabled = false; }
+};
+$('reset-stock').onclick = async () => { await api('POST', '/api/inventory/reset'); refreshSystem(); };
+$('dlq-redrive').onclick = async () => { try { await api('POST', '/api/dlq/redrive'); refreshSystem(); } catch (err) { alert(err.message); } };
+$('dlq-purge').onclick = async () => {
+  if (!confirm('Delete every message in the DLQ?')) return;
+  try { await api('POST', '/api/dlq/purge'); refreshSystem(); } catch (err) { alert(err.message); }
+};
+
+async function refreshSystem() {
+  if (!config?.ready) return;
+  try {
+    const [inv, q, logs] = await Promise.all([
+      api('GET', '/api/inventory'), api('GET', '/api/queues'), api('GET', '/api/consumer-logs?since=' + (Date.now() - 15 * 60_000)),
+    ]);
+    $('inv').innerHTML = inv.map((i) => `<span>${esc(i.sku)} · ${esc(i.name)}</span><b>${esc(i.available)}</b>`).join('');
+    const main = $('q-main');
+    main.className = 'box ' + (q.main.visible + q.main.inFlight ? 'run' : '');
+    main.querySelector('b').textContent = `${q.main.visible} · ${q.main.inFlight}`;
+    const dlq = $('q-dlq');
+    dlq.className = 'box ' + (q.dlq.visible ? 'bad' : 'ok');
+    dlq.querySelector('b').textContent = q.dlq.visible;
+    const al = $('q-alarm');
+    al.className = 'box ' + (q.alarm.state === 'ALARM' ? 'bad' : q.alarm.state === 'OK' ? 'ok' : '');
+    al.querySelector('b').textContent = q.alarm.state ?? '–';
+    al.title = q.alarm.reason ?? '';
+    $('consumer-log').innerHTML = logs.length
+      ? logs.slice().reverse().map((e) => `<div class="${e.msg === 'Message failed' ? 'attempt bad' : 'attempt ok'}">${esc(e.at.slice(11, 19))} ${
+          e.msg === 'Message failed' ? '✗ failed ' + esc(e.error) : `✓ received ${esc(e.orderId)} · receiveCount ${esc(e.receiveCount)}`}</div>`).join('')
+      : '<span class="muted">No messages yet.</span>';
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function boot() {
+  renderNav(); renderScenario();
+  try {
+    config = await api('GET', '/api/config');
+  } catch (err) {
+    $('meta').textContent = 'Cannot reach AWS: ' + err.message;
+    return;
+  }
+  $('meta').textContent = `stack ${config.stack} · ${config.region}`;
+  if (!config.ready) {
+    $('banner').hidden = false;
+    $('banner').innerHTML = `<b>The deployed stack is older than your code.</b> Missing: ${esc(config.missing.join(', '))}.
+      Deploy step 5 from the project folder, then reload this page:
+      <pre>sam build
+sam deploy --parameter-overrides FailRate=0.3 ConsumerFail=false
+npx tsx scripts/seed.ts &lt;InventoryTableName from the outputs&gt;</pre>`;
+    document.querySelectorAll('#sw-apply, #reset-stock, #dlq-redrive, #dlq-purge').forEach((b) => (b.disabled = true));
+    return;
+  }
+  showSwitches(config.switches);
+  const L = config.links;
+  $('links').innerHTML = [['State machine', L.stateMachine], ['Orders', L.ordersTable], ['Inventory', L.inventoryTable], ['Queue', L.queue],
+    ['DLQ', L.dlq], ['Alarm', L.alarm], ['Consumer logs', L.consumerLogs]]
+    .map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noreferrer">${t} ↗</a>`).join('');
+  renderScenario();
+  refreshSystem();
+  setInterval(() => { if (!document.hidden) refreshSystem(); }, 4000);
+}
+boot();
+</script>
+</body>
+</html>

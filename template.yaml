@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: mini-ofc - mini order fulfilment backend
 
+Parameters:
+  FailRate:
+    Type: String
+    Default: '0.3'
+    Description: Chance (0-1) that CreateConsignment throws ConsignmentServiceError. Set 1 to force the compensation path.
+  ConsumerFail:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: When true, StoreConsumer fails every message so it ends up in the DLQ.
+
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -140,8 +151,11 @@ Resources:
         Variables:
           INVENTORY_TABLE: !Ref InventoryTable
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref InventoryTable
+        # TransactWriteItems is authorised per item, so UpdateItem is all it needs.
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt InventoryTable.Arn
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -151,6 +165,102 @@ Resources:
         Minify: true
         Sourcemap: true
 
+  CreateConsignmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: createConsignment.handler
+      Environment:
+        Variables:
+          FAIL_RATE: !Ref FailRate
+      # No AWS calls, so no extra policies beyond the default CloudWatch Logs access.
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/createConsignment.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  ReleaseStockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: releaseStock.handler
+      Environment:
+        Variables:
+          INVENTORY_TABLE: !Ref InventoryTable
+          ORDERS_TABLE: !Ref OrdersTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource:
+                - !GetAtt InventoryTable.Arn
+                - !GetAtt OrdersTable.Arn
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/releaseStock.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  FulfilmentDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600 # 14 days, the maximum, to give time to investigate
+
+  FulfilmentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      # Must be at least the consumer's timeout (10s), or a message could be redelivered mid-processing.
+      VisibilityTimeout: 30
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt FulfilmentDLQ.Arn
+        maxReceiveCount: 3
+
+  StoreConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: storeConsumer.handler
+      Environment:
+        Variables:
+          CONSUMER_FAIL: !Ref ConsumerFail
+      # SAM adds the receive/delete permissions the SQS event source needs.
+      Events:
+        FulfilmentMessages:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FulfilmentQueue.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/storeConsumer.ts
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  FulfilmentDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Fulfilment messages failed 3 times and are sitting in the DLQ
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt FulfilmentDLQ.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   OrderWorkflow:
     Type: AWS::Serverless::StateMachine
     Properties:
@@ -158,12 +268,23 @@ Resources:
       DefinitionUri: statemachine/order.asl.json
       DefinitionSubstitutions:
         ReserveStockFunctionArn: !GetAtt ReserveStockFunction.Arn
+        CreateConsignmentFunctionArn: !GetAtt CreateConsignmentFunction.Arn
+        ReleaseStockFunctionArn: !GetAtt ReleaseStockFunction.Arn
+        FulfilmentQueueUrl: !Ref FulfilmentQueue
         OrdersTableName: !Ref OrdersTable
       Policies:
         - LambdaInvokePolicy:
             FunctionName: !Ref ReserveStockFunction
-        - DynamoDBWritePolicy:
-            TableName: !Ref OrdersTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CreateConsignmentFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ReleaseStockFunction
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt FulfilmentQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt OrdersTable.Arn
 
 Outputs:
   HttpApiUrl:
@@ -178,3 +299,12 @@ Outputs:
   OrderWorkflowArn:
     Description: Order workflow state machine ARN
     Value: !Ref OrderWorkflow
+  FulfilmentQueueUrl:
+    Description: Queue the workflow sends orders to for the store
+    Value: !Ref FulfilmentQueue
+  FulfilmentDLQUrl:
+    Description: Dead-letter queue for fulfilment messages that failed 3 times
+    Value: !Ref FulfilmentDLQ
+  FulfilmentDLQAlarmName:
+    Description: Alarm that fires when the DLQ has messages
+    Value: !Ref FulfilmentDLQAlarm

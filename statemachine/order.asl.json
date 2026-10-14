@@ -1,5 +1,5 @@
 {
-  "Comment": "Order workflow: reserve stock, then mark the order RESERVED, or FAILED when stock runs out",
+  "Comment": "Order workflow: reserve stock, create a consignment, send it to the store queue and mark the order SENT_TO_STORE. On failure after reserving, release the stock and mark the order FAILED.",
   "StartAt": "ReserveStock",
   "States": {
     "ReserveStock": {
@@ -13,19 +13,84 @@
           "Next": "MarkFailed"
         }
       ],
-      "Next": "MarkReserved"
+      "Next": "CreateConsignment"
     },
-    "MarkReserved": {
+    "CreateConsignment": {
+      "Type": "Task",
+      "Resource": "${CreateConsignmentFunctionArn}",
+      "ResultPath": "$.consignment",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "ConsignmentServiceError",
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseStock"
+        }
+      ],
+      "Next": "SendToFulfilmentQueue"
+    },
+    "SendToFulfilmentQueue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${FulfilmentQueueUrl}",
+        "MessageBody": {
+          "orderId.$": "$.orderId",
+          "items.$": "$.items",
+          "consignmentId.$": "$.consignment.consignmentId"
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseStock"
+        }
+      ],
+      "Next": "MarkCompleted"
+    },
+    "MarkCompleted": {
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:updateItem",
       "Parameters": {
         "TableName": "${OrdersTableName}",
         "Key": { "orderId": { "S.$": "$.orderId" } },
-        "UpdateExpression": "SET #status = :status",
+        "UpdateExpression": "SET #status = :status, consignmentId = :consignmentId",
         "ExpressionAttributeNames": { "#status": "status" },
-        "ExpressionAttributeValues": { ":status": { "S": "RESERVED" } }
+        "ExpressionAttributeValues": {
+          ":status": { "S": "SENT_TO_STORE" },
+          ":consignmentId": { "S.$": "$.consignment.consignmentId" }
+        }
       },
       "End": true
+    },
+    "ReleaseStock": {
+      "Type": "Task",
+      "Resource": "${ReleaseStockFunctionArn}",
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "MarkFailed"
     },
     "MarkFailed": {
       "Type": "Task",
@@ -37,7 +102,7 @@
         "ExpressionAttributeNames": { "#status": "status" },
         "ExpressionAttributeValues": {
           ":status": { "S": "FAILED" },
-          ":reason": { "S": "OutOfStock" }
+          ":reason": { "S.$": "$.error.Error" }
         }
       },
       "End": true
