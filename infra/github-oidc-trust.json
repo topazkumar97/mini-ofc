@@ -10,7 +10,7 @@
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:topazkumar97/mini-ofc:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:topazkumar97@99470793/mini-ofc@1418455025:ref:refs/heads/main"
         }
       }
     }
