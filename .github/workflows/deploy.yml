@@ -1,0 +1,57 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - template.yaml
+      - samconfig.toml
+      - src/**
+      - statemachine/**
+      - package*.json
+      - .github/workflows/**
+  workflow_dispatch:
+
+# Least privilege for the GITHUB_TOKEN. id-token: write lets the job ask
+# GitHub for an OIDC JWT, which AWS STS swaps for short-lived role creds.
+permissions:
+  id-token: write
+  contents: read
+
+# One deploy at a time; a newer push queues instead of killing a
+# CloudFormation update halfway through.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # esbuild (used by sam build) comes from devDependencies
+      - run: npm ci
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: sam build && sam deploy --no-confirm-changeset --no-fail-on-empty-changeset

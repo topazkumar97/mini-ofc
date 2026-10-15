@@ -8,6 +8,8 @@ region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+# Pinned so CI and local deploys agree; override locally with --parameter-overrides
+parameter_overrides = "FailRate=\"0.3\" ConsumerFail=\"false\""
 
 [default.global.parameters]
 region = "us-east-1"
