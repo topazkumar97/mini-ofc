@@ -45,8 +45,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # esbuild (used by sam build) comes from devDependencies
+      # esbuild (used by sam build) comes from devDependencies. sam build
+      # bundles from a scratch copy, so put the locked binary on PATH.
       - run: npm ci
+      - run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
